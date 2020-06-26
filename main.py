@@ -1,5 +1,7 @@
 import os
 import json
+import sys
+import progressbar
 
 import spotipy
 import spotipy.util as util
@@ -8,10 +10,8 @@ from youtube_search import YoutubeSearch
 import youtube_dl
 
 credentials = json.load(open('credentials.json'))
-track_list = []
 
-# playlist_link = input("Paste in your playlist link: ")
-playlist_link = 'spotify:playlist:3xt67f6tY5Tj4PaLIVUSdv'
+playlist_id = input("Paste in your playlist link: ")
 
 username = "11135169461"
 scope = ""
@@ -26,20 +26,42 @@ token = util.prompt_for_user_token(username,
 
 sp = spotipy.Spotify(auth=token)
 offset = 0
+track_list = []
 
-tracks = sp.playlist(playlist_link, fields = "tracks.total, tracks.items.track.artists.name, tracks.items.track.name")['tracks']
+while True:
+    response = sp.playlist_tracks(playlist_id, offset = offset, fields = "items.track.artists.name, items.track.name")
+
+    if (len(response["items"]) == 0):
+        break
+
+    offset += len(response["items"])
+    for item in response["items"]:
+        track = ""
+        for artist in item["track"]["artists"]:
+            track = track + artist["name"] + " "
+        track = track + item["track"]["name"]
+        track_list.append(track)
 
 track_youtube_ids = []
+print("---------------------------------")
+print("Searching YouTube for video ids:")
+for i in progressbar.progressbar(range(len(track_list))):
+    results = []
+    while(len(results) == 0):
+        results = YoutubeSearch(track_list[i], max_results = 1).to_dict()
+    track_youtube_ids.append(results[0]['id'])
 
-for i in range(len(tracks['items'])):
-    print(len(tracks['items']))
-    songname = ''
-    for j in tracks['items'][i]['track']['artists']:
-        songname = songname + j['name'] + ' '
-    songname = songname + tracks['items'][i]['track']['name']
-    print(songname)
-    # results = []
-    # while(len(results) == 0):
-    #     results = YoutubeSearch(songname, max_results = 1).to_dict()
-    # track_youtube_ids.append(results[0]['id'])
 
+ydl_opts = {
+    'format': 'bestaudio/best',
+    'outtmpl': '',
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'mp3',
+        'preferredquality': '192',
+    }],
+}
+for i in progressbar.progressbar(range(len(track_youtube_ids))):
+    ydl_opts["outtmpl"] = 'songs/' + str(i + 1) + ' - %(title)s.%(ext)s'
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([track_youtube_ids[i]])
